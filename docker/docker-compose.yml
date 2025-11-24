@@ -4,6 +4,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    environment:
+     - USER_NAME=${USER_NAME}
+     - USER_PASS=${USER_PASS}
     ports:
       - "8501:8501"
     volumes:

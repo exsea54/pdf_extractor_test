@@ -14,6 +14,9 @@ from pdfminer.pdfdocument import PDFDocument
 from io import StringIO
 import numpy as np # For median calculation
 
+USER_NAME =  os.environ.get("USER_NAME")
+USER_PASS =  os.environ.get("USER_PASS")
+
 def parse_lt_objs(lt_objs, extracted_data):
     """Recursively parse LT objects and extract text with font info."""
     for lt_obj in lt_objs:
@@ -482,91 +485,124 @@ def format_extracted_text(text_data, heading_pattern_strings):
 
     return final_result
 
+# --- Authentication Logic ---
+def authenticate(username, password):
+    # Hardcoded username and password for simplicity
+    HARDCODED_USERNAME = USER_NAME
+    HARDCODED_PASSWORD = USER_PASS
+
+    if username == HARDCODED_USERNAME and password == HARDCODED_PASSWORD:
+        return True
+    return False
+# --- End Authentication Logic ---
+
 # Main Streamlit application logic
 def main():
-    st.title("PDF Text Extractor and Formatter")
+    if 'logged_in' not in st.session_state:
+        st.session_state.logged_in = False
 
-    uploaded_file = st.file_uploader("Choose a PDF file", type="pdf")
+    if not st.session_state.logged_in:
+        st.title("Login to PDF Text Extractor")
 
-    # Add radio button for layout type selection
-    layout_type = st.radio(
-        "Select PDF Layout Type:",
-        ("Single Column", "Two Columns"),
-        index=0,  # Default to 'Single Column'
-        help="Choose 'Single Column' for standard PDFs or 'Two Columns' for PDFs with two-column text layout."
-    )
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
 
-    if uploaded_file is not None:
-        st.write("Processing PDF...")
+        if st.button("Login"):
+            if authenticate(username, password):
+                st.session_state.logged_in = True
+                st.success("Logged in successfully!")
+                st.rerun() # Rerun to hide login and show main app
+            else:
+                st.error("Invalid username or password")
+    else: # User is logged in, show the main application
+        st.title("PDF Text Extractor and Formatter")
 
-        # Extract text with font info, passing the selected layout type
-        extracted_data_with_fonts = extract_text_from_pdf(uploaded_file, layout_type)
+        # Add logout button
+        if st.button("Logout"):
+            st.session_state.logged_in = False
+            st.rerun()
 
-        if extracted_data_with_fonts:
-            st.subheader("Extracted Data with Font Information (Raw)")
-            with st.expander("Show raw extracted data"):
-                st.json(extracted_data_with_fonts[:200]) # Show first 200 items
+        uploaded_file = st.file_uploader("Choose a PDF file", type="pdf")
 
-            cleaned_text_data = clean_pdf_text_artifacts(extracted_data_with_fonts)
-            st.subheader("Cleaned Structured Text (Lines & Duplicates Processed)")
-            with st.expander("Show cleaned structured text"):
-                st.json(cleaned_text_data[:200]) # Show first 200 items
+        # Add radio button for layout type selection
+        layout_type = st.radio(
+            "Select PDF Layout Type:",
+            ("Single Column", "Two Columns"),
+            index=0,  # Default to 'Single Column'
+            help="Choose 'Single Column' for standard PDFs or 'Two Columns' for PDFs with two-column text layout."
+        )
 
-            # Get potential heading pattern strings
-            all_potential_heading_patterns = detect_heading_patterns_llm_like(cleaned_text_data)
+        if uploaded_file is not None:
+            st.write("Processing PDF...")
 
-            # Define static patterns that should be pre-selected
-            # This set should match the base_patterns_str from detect_heading_patterns_llm_like
-            pre_selected_static_patterns = [
-                r'^[A-Z]\.\s', # E.g., 'A. Section Title'
-                r'^\d+\.\s', # E.g., '1. Section Title', '1.1. Subtitle'
-                r'^■', # Bullet point style heading
-                r'^・', # Another bullet point style
-                r'^【.+】', # Text enclosed in brackets
-                r'^\( ?[0-9a-zA-Zア-ンー]+\)', # (1), (a), (イ)
-                r'^\[ ?[0-9a-zA-Zア-ンー]+\]', # [1], [a], [イ]
-                r'^[A-Z]章$', # E.g., 'A章'
-                r'^第[一二三四五六七八九十百千万億]+[章条]$', # E.g., '第一章', '第一条' - UPDATED
-                r'^[0-9]+[．\.．]\s',
-                r'^[0-9]+[ ]?[項目編]', # 1項目, 2編
-                r'^[0-9A-Za-zア-ンー]{1,3}節',
-                r'^[0-9]+\.[0-9]+\s',
-                r'^□', # NEW: Covers '□舞台', '□あらすじ' etc.
-                r'^▼', # NEW: Covers '▼はじめに'
-                r'^▷', # NEW: Covers '▷見た映像をそのままデータに記録する記録機能'
-                r'^❖', # NEW: Covers '❖共通 HO' etc.
-                r'^目次$', # NEW: Covers '目次'
-                r'^●$', # Covers '目次' (common bullet)
-                r'^◇$', # NEW: Covers '目次' (common bullet)
-                r'^★$'  # NEW: Covers '目次' (common bullet)
-            ]
-            # Ensure pre-selected patterns are in the available options
-            default_selected_patterns = [p for p in pre_selected_static_patterns if p in all_potential_heading_patterns]
+            # Extract text with font info, passing the selected layout type
+            extracted_data_with_fonts = extract_text_from_pdf(uploaded_file, layout_type)
 
-            st.subheader("Select Heading Patterns")
-            selected_patterns = st.multiselect(
-                "Choose patterns to treat as headings:",
-                options=all_potential_heading_patterns,
-                default=default_selected_patterns,
-                help="Select the regular expression patterns that should define headings. Text matching these patterns will be separated by two newlines, and other text will be concatenated without spaces."
-            )
+            if extracted_data_with_fonts:
+                st.subheader("Extracted Data with Font Information (Raw)")
+                with st.expander("Show raw extracted data"):
+                    st.json(extracted_data_with_fonts[:200]) # Show first 200 items
 
-            # Format text using the selected heading patterns
-            formatted_text = format_extracted_text(cleaned_text_data, selected_patterns)
+                cleaned_text_data = clean_pdf_text_artifacts(extracted_data_with_fonts)
+                st.subheader("Cleaned Structured Text (Lines & Duplicates Processed)")
+                with st.expander("Show cleaned structured text"):
+                    st.json(cleaned_text_data[:200]) # Show first 200 items
 
-            st.subheader("Formatted Text")
-            with st.expander("Show formatted text"):
-                st.text(formatted_text)
+                # Get potential heading pattern strings
+                all_potential_heading_patterns = detect_heading_patterns_llm_like(cleaned_text_data)
 
-            # Add download button for formatted text
-            st.download_button(
-                label="Download Formatted Text",
-                data=formatted_text,
-                file_name="formatted_text.txt",
-                mime="text/plain"
-            )
-        else:
-            st.error("Failed to extract text from the PDF.")
+                # Define static patterns that should be pre-selected
+                # This set should match the base_patterns_str from detect_heading_patterns_llm_like
+                pre_selected_static_patterns = [
+                    r'^[A-Z]\.\s', # E.g., 'A. Section Title'
+                    r'^\d+\.\s', # E.g., '1. Section Title', '1.1. Subtitle'
+                    r'^■', # Bullet point style heading
+                    r'^・', # Another bullet point style
+                    r'^【.+】', # Text enclosed in brackets
+                    r'^\( ?[0-9a-zA-Zア-ンー]+\)', # (1), (a), (イ)
+                    r'^\[ ?[0-9a-zA-Zア-ンー]+\]', # [1], [a], [イ]
+                    r'^[A-Z]章$', # E.g., 'A章'
+                    r'^第[一二三四五六七八九十百千万億]+[章条]$', # E.g., '第一章', '第一条' - UPDATED
+                    r'^[0-9]+[．\.．]\s',
+                    r'^[0-9]+[ ]?[項目編]', # 1項目, 2編
+                    r'^[0-9A-Za-zア-ンー]{1,3}節',
+                    r'^[0-9]+\.[0-9]+\s',
+                    r'^□', # NEW: Covers '□舞台', '□あらすじ' etc.
+                    r'^▼', # NEW: Covers '▼はじめに'
+                    r'^▷', # NEW: Covers '▷見た映像をそのままデータに記録する記録機能'
+                    r'^❖', # NEW: Covers '❖共通 HO' etc.
+                    r'^目次$', # NEW: Covers '目次'
+                    r'^●$', # Covers '目次' (common bullet)
+                    r'^◇$', # NEW: Covers '目次' (common bullet)
+                    r'^★$'  # NEW: Covers '目次' (common bullet)
+                ]
+                # Ensure pre-selected patterns are in the available options
+                default_selected_patterns = [p for p in pre_selected_static_patterns if p in all_potential_heading_patterns]
+
+                st.subheader("Select Heading Patterns")
+                selected_patterns = st.multiselect(
+                    "Choose patterns to treat as headings:",
+                    options=all_potential_heading_patterns,
+                    default=default_selected_patterns,
+                    help="Select the regular expression patterns that should define headings. Text matching these patterns will be separated by two newlines, and other text will be concatenated without spaces."
+                )
+
+                # Format text using the selected heading patterns
+                formatted_text = format_extracted_text(cleaned_text_data, selected_patterns)
+
+                st.subheader("Formatted Text")
+                with st.expander("Show formatted text"):
+                    st.text(formatted_text)
+
+                # Add download button for formatted text
+                st.download_button(
+                    label="Download Formatted Text",
+                    data=formatted_text,
+                    file_name="formatted_text.txt",
+                    mime="text/plain"
+                )
+            else:
+                st.error("Failed to extract text from the PDF.")
 
 if __name__ == "__main__":
     main()
