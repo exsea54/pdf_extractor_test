@@ -1,0 +1,6 @@
+streamlit
+pdfminer.six
+numpy
+sentence-transformers
+fugashi
+unidic-lite
